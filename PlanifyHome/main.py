@@ -14,10 +14,100 @@ SCENE_MARGIN = 2000
 TOOLS = ["Wall", "Door", "Window"]
 FURNITURE = ["Bed", "Table", "Sofa", "Wardrobe"]
 
-class CanvasScene(QGraphicsScene):
-    def __init__(self):
-        super().__init__(-SCENE_MARGIN, -SCENE_MARGIN, 2 * SCENE_MARGIN, 2 * SCENE_MARGIN)
+class PlanItem:
+    def __init__(self, kind: str, graphics_item):
+        self.kind = kind
+        self.item = graphics_item
 
+class CanvasScene(QGraphicsScene):
+    def __init__(self, parent=None):
+        super().__init__(-SCENE_MARGIN, -SCENE_MARGIN, 2 * SCENE_MARGIN, 2 * SCENE_MARGIN)
+        self._current_item = None
+        self._items = []
+        self.parent_widget = parent
+
+    def snap_to_grid(self, pos: QPointF) -> QPointF:
+        x = round(pos.x() / GRID_SIZE) * GRID_SIZE
+        y = round(pos.y() / GRID_SIZE) * GRID_SIZE
+        return QPointF(x, y)
+
+    def add_wall(self, start: QPointF, end: QPointF) -> QtWidgets.QGraphicsLineItem:
+        pen = QPen(Qt.black, 6)
+        return self.addLine(start.x(), start.y(), end.x(), end.y(), pen)
+
+    def add_door(self, start: QPointF, end: QPointF):
+        line_pen = QPen(Qt.blue, 3)
+        line_item = self.addLine(start.x(), start.y(), end.x(), end.y(), line_pen)
+
+        swing_radius = math.hypot(end.x() - start.x(), end.y() - start.y())
+        path = QtGui.QPainterPath(start)
+        path.arcTo(start.x() - swing_radius, start.y() - swing_radius,
+                   swing_radius * 2, swing_radius * 2, 0, 90)
+        arc_item = QtWidgets.QGraphicsPathItem(path)
+        arc_item.setPen(QPen(Qt.blue, 1))
+        arc_item.setBrush(QColor(0, 0, 255, 50))  # semi-transparent swing
+        self.addItem(arc_item)
+
+        return (line_item, arc_item)
+
+    def add_window(self, start: QPointF, end: QPointF):
+        pen = QPen(Qt.red, 3, Qt.DashLine)
+        line_item = self.addLine(start.x(), start.y(), end.x(), end.y(), pen)
+
+        dx = end.x() - start.x()
+        dy = end.y() - start.y()
+        length = 10
+        if dx == 0:
+            self.addLine(start.x() - length / 2, start.y(), start.x() + length / 2, start.y(), QPen(Qt.red, 2))
+            self.addLine(end.x() - length / 2, end.y(), end.x() + length / 2, end.y(), QPen(Qt.red, 2))
+        else:
+            self.addLine(start.x(), start.y() - length / 2, start.x(), start.y() + length / 2, QPen(Qt.red, 2))
+            self.addLine(end.x(), end.y() - length / 2, end.x(), end.y() + length / 2, QPen(Qt.red, 2))
+
+        return line_item
+
+    def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent):
+        if event.button() == Qt.LeftButton and self.parent_widget._current_mode in ("Wall", "Door", "Window"):
+            pos = self.snap_to_grid(event.scenePos())
+            kind = self.parent_widget._current_mode
+
+            if self._current_item is None:
+                if kind == "Wall":
+                    self._current_item = self.add_wall(pos, pos)
+                elif kind == "Door":
+                    self._current_item = self.add_door(pos, pos)
+                elif kind == "Window":
+                    self._current_item = self.add_window(pos, pos)
+            else:
+                self._items.append(self._current_item)
+                self._current_item = None
+
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent):
+        if self._current_item is not None:
+            end = self.snap_to_grid(event.scenePos())
+            if isinstance(self._current_item, QtWidgets.QGraphicsLineItem):
+                line = self._current_item.line()
+                line.setP2(end)
+                self._current_item.setLine(line)
+            elif isinstance(self._current_item, tuple):
+                line, arc = self._current_item
+                line.setLine(line.line().x1(), line.line().y1(), end.x(), end.y())
+
+                dx = end.x() - line.line().x1()
+                dy = end.y() - line.line().y1()
+                swing_radius = math.hypot(dx, dy)
+                path = QtGui.QPainterPath(QPointF(line.line().x1(), line.line().y1()))
+                path.arcTo(line.line().x1() - swing_radius, line.line().y1() - swing_radius,
+                           swing_radius * 2, swing_radius * 2, 0, 90)
+                arc.setPath(path)
+            elif isinstance(self._current_item, QtWidgets.QGraphicsLineItem):
+                line = self._current_item.line()
+                line.setP2(end)
+                self._current_item.setLine(line)
+
+        super().mouseMoveEvent(event)
     def drawBackground(self, painter: QPainter, rect: QRectF):
         painter.save()
         painter.fillRect(rect, Qt.white)
@@ -44,17 +134,28 @@ class CanvasScene(QGraphicsScene):
 
         painter.restore()
 
+    def color_for(self, kind: str) -> QColor:
+        if kind == "Wall":
+            return Qt.black
+        elif kind == "Door":
+            return Qt.blue
+        elif kind == "Window":
+            return Qt.red
+        return Qt.gray
+
 
 class CanvasView(QGraphicsView):
     mouse_moved = QtCore.Signal(QPointF)
 
-    def __init__(self, scene: QGraphicsScene):
+    def __init__(self, scene: QGraphicsScene, parent=None):
         super().__init__(scene)
         self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setDragMode(QGraphicsView.NoDrag)
         self.setMouseTracking(True)
+        self.main_window = parent
+        scene.parent_widget = parent
 
     def wheelEvent(self, e: QtGui.QWheelEvent):
         if QApplication.keyboardModifiers() & Qt.ControlModifier:
@@ -86,8 +187,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Planify Home – UI")
         self.resize(1280, 800)
 
-        self.scene = CanvasScene()
-        self.view = CanvasView(self.scene)
+        self.scene = CanvasScene(parent=self)
+        self.view = CanvasView(self.scene, parent=self)
         self.setCentralWidget(self.view)
 
         self.status = self.statusBar()
