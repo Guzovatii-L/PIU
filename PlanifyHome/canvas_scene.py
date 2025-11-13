@@ -5,6 +5,8 @@ from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, QPointF, QRectF
 from PySide6.QtGui import QPainter, QPen, QColor, QBrush
 from PySide6.QtWidgets import QGraphicsScene
+
+from furniture import FurnitureItem
 from constants import SCENE_MARGIN, GRID_SIZE
 
 
@@ -167,6 +169,26 @@ class CanvasScene(QGraphicsScene):
             self.addLine(end.x(), end.y() - length / 2, end.x(), end.y() + length / 2, QPen(Qt.red, 2))
 
         return line_item
+
+    def add_bed(self, center: QPointF) -> FurnitureItem:
+        w, h = 200.0, 160.0
+        x, y = center.x() - w / 2, center.y() - h / 2
+        item = FurnitureItem("Bed", x, y, w, h)
+        self.addItem(item)
+        return item
+    def add_table(self, center: QPointF) -> FurnitureItem:
+        w, h = 200.0, 110.0
+        x, y = center.x() - w / 2, center.y() - h / 2
+        item = FurnitureItem("Table", x, y, w, h)
+        self.addItem(item)
+        return item
+
+    def add_sofa(self, center: QPointF) -> FurnitureItem:
+        w, h = 260.0, 90.0
+        x, y = center.x() - w / 2, center.y() - h / 2
+        item = FurnitureItem("Sofa", x, y, w, h)
+        self.addItem(item)
+        return item
 
     def clear_wall_end_markers(self):
         for marker in self._wall_end_markers:
