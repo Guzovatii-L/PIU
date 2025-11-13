@@ -2,13 +2,14 @@ from PySide6 import QtCore
 from PySide6.QtCore import Qt, QPointF
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
-    QMainWindow, QToolBar, QDockWidget, QListWidget, QListWidgetItem, 
+    QMainWindow, QToolBar, QDockWidget, QListWidget, QListWidgetItem,
     QMessageBox
 )
 
 from constants import TOOLS, FURNITURE
 from canvas_scene import CanvasScene
-from canvas_view import CanvasView 
+from canvas_view import CanvasView
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -31,6 +32,12 @@ class MainWindow(QMainWindow):
     def set_mode(self, label: str):
         self._current_mode = label
         self._update_status_ready()
+
+        if hasattr(self, "scene"):
+            if label == "Wall":
+                self.scene.show_wall_end_markers()
+            else:
+                self.scene.clear_wall_end_markers()
 
     def _build_toolbar(self):
         tb = QToolBar("Main")
@@ -97,10 +104,9 @@ class MainWindow(QMainWindow):
             return
         kind, name = payload
         if kind == "tool":
-            self._current_mode = name
+            self.set_mode(name)
         else:
-            self._current_mode = f"Furniture: {name}"
-        self._update_status_ready()
+            self.set_mode(f"Furniture: {name}")
 
     def _update_status_ready(self):
         self.status.showMessage(f"Mode: {self._current_mode} | Zoom: Ctrl+Wheel | Pan: Space+Drag")
