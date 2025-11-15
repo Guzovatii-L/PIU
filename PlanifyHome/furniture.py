@@ -72,6 +72,8 @@ class FurnitureItem(QtWidgets.QGraphicsRectItem):
             self._min_w, self._min_h = 100.0, 80.0
         elif self.kind == "Sofa":
             self._min_w, self._min_h = 120.0, 50.0
+        elif self.kind=="Wardrobe":
+            self._min_w, self._min_h = 90.0, 60.0
 
         self.setFlags(
             QtWidgets.QGraphicsItem.ItemIsMovable |
@@ -179,6 +181,32 @@ class FurnitureItem(QtWidgets.QGraphicsRectItem):
                 painter.drawRect(cx, y_bot_seat, seat_w, seat_h) 
                 painter.drawRect(cx, y_bot_back, seat_w, back_h) 
                 cx += seat_w + spacing
+
+        elif self.kind=="Wardrobe":
+            painter.setPen(QPen(QtGui.Qt.black, 2))
+            painter.setBrush(QColor(240, 240, 240))
+            painter.drawRect(r) 
+
+            painter.setPen(QPen(QtGui.Qt.black, 1))
+            margin = max(4.0, min(w, h) * 0.05)
+            painter.drawLine(w * 0.5, margin, w * 0.5, h - margin)
+
+
+            base_h = max(4.0, h * 0.06)
+            painter.setBrush(QColor(220, 220, 220))
+            painter.drawRect(0, h - base_h, w, base_h)
+
+            painter.setBrush(QtGui.Qt.white)
+            handle_h = max(12.0, h * 0.18)
+            handle_w = max(4.0,  w * 0.06)
+            handle_gap = max(6.0, w * 0.06)
+
+            y = (h - handle_h) / 2.0
+            x_left  = (w * 0.5) - handle_gap - handle_w
+            x_right = (w * 0.5) + handle_gap
+            painter.drawRoundedRect(x_left,  y, handle_w, handle_h, 2, 2)
+            painter.drawRoundedRect(x_right, y, handle_w, handle_h, 2, 2)
+            
         else:
             painter.setPen(QPen(Qt.black, 1))
             painter.setBrush(Qt.white)
