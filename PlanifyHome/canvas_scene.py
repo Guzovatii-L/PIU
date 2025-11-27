@@ -209,6 +209,22 @@ class CanvasScene(QGraphicsScene):
         item = FurnitureItem("Wardrobe", x, y, w, h)
         self.addItem(item)
         return item
+    
+    def add_chair(self, center: QPointF) -> FurnitureItem:
+        w, h = 60.0, 70.0
+        x, y = center.x() - w / 2, center.y() - h / 2
+        item = FurnitureItem("Chair", x, y, w, h)
+        self.addItem(item)
+        return item
+    
+    def add_plant(self, center: QPointF) -> FurnitureItem:
+        w, h = 60.0, 60.0
+        x, y = center.x() - w / 2, center.y() - h / 2
+        item = FurnitureItem("Plant", x, y, w, h)
+        self.addItem(item)
+        return item
+
+
 
     def clear_wall_end_markers(self):
         for marker in self._wall_end_markers:
@@ -290,6 +306,15 @@ class CanvasScene(QGraphicsScene):
                 self._items.append(self.add_wardrobe(pos))
                 if self.parent_widget:
                     self.parent_widget.set_mode("Select")
+                return
+            elif mode == "Furniture: Chair":
+                self._items.append(self.add_chair(pos))
+                if self.parent_widget:
+                    self.parent_widget.set_mode("Select")
+                return
+            elif mode == "Furniture: Plant":
+                self._items.append(self.add_plant(pos))
+                if self.parent_widget: self.parent_widget.set_mode("Select")
                 return
         super().mousePressEvent(event)
 
@@ -408,3 +433,4 @@ class CanvasScene(QGraphicsScene):
                 self.delete_selected()
         else:
             super().contextMenuEvent(event)
+

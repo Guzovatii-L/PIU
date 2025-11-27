@@ -1,27 +1,30 @@
 from __future__ import annotations
-from PySide6 import QtWidgets, QtGui, QtCore
-from PySide6.QtCore import Qt, QPointF, QRectF
-from PySide6.QtGui import QPainter, QPen, QColor, QBrush, QPainterPath
+
+from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6.QtCore import QPointF
+from PySide6.QtGui import QPainter, QPen, QColor
+
 
 class ResizeHandle(QtWidgets.QGraphicsRectItem):
-    SIZE = 14 
+    SIZE = 14
+
     def __init__(self, parent_item: 'FurnitureItem'):
-        super().__init__(-self.SIZE/2, -self.SIZE/2, self.SIZE, self.SIZE, parent_item)
+        super().__init__(-self.SIZE / 2, -self.SIZE / 2, self.SIZE, self.SIZE, parent_item)
         self._parent = parent_item
         self._parent_was_movable = False
 
-        self.setBrush(Qt.white)
-        self.setPen(QPen(Qt.black, 1))
-        self.setCursor(Qt.SizeFDiagCursor)
-        self.setZValue(1_000_000) 
-        self.setAcceptedMouseButtons(Qt.LeftButton)
+        self.setBrush(QtCore.Qt.white)
+        self.setPen(QPen(QtCore.Qt.black, 1))
+        self.setCursor(QtCore.Qt.SizeFDiagCursor)
+        self.setZValue(1_000_000)
+        self.setAcceptedMouseButtons(QtCore.Qt.LeftButton)
         self.setAcceptHoverEvents(True)
 
         self.setFlags(
-            QtWidgets.QGraphicsItem.ItemIsMovable |
-            QtWidgets.QGraphicsItem.ItemSendsGeometryChanges |
-            QtWidgets.QGraphicsItem.ItemIgnoresParentOpacity |
-            QtWidgets.QGraphicsItem.ItemIgnoresTransformations
+            QtWidgets.QGraphicsItem.ItemIsMovable
+            | QtWidgets.QGraphicsItem.ItemSendsGeometryChanges
+            | QtWidgets.QGraphicsItem.ItemIgnoresParentOpacity
+            | QtWidgets.QGraphicsItem.ItemIgnoresTransformations
         )
 
     def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent):
@@ -42,7 +45,7 @@ class ResizeHandle(QtWidgets.QGraphicsRectItem):
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event: QtWidgets.QGraphicsSceneHoverEvent):
-        self.setBrush(Qt.white)
+        self.setBrush(QtCore.Qt.white)
         super().hoverLeaveEvent(event)
 
     def itemChange(self, change, value):
@@ -50,7 +53,7 @@ class ResizeHandle(QtWidgets.QGraphicsRectItem):
             p: QPointF = value
             new_w = max(self._parent._min_w, p.x())
             new_h = max(self._parent._min_h, p.y())
-            return QPointF(new_w, new_h) 
+            return QtCore.QPointF(new_w, new_h)
         if change == QtWidgets.QGraphicsItem.ItemPositionHasChanged:
             p = self.pos()
             self._parent.resize_to(p.x(), p.y())
@@ -64,24 +67,27 @@ class FurnitureItem(QtWidgets.QGraphicsRectItem):
         self.setPos(x, y)
 
         self._min_w, self._min_h = 60.0, 40.0
-
         if self.kind == "Table":
-            self._min_w = 100.0
-            self._min_h = 90.0
+            self._min_w, self._min_h = 80.0, 50.0
         elif self.kind == "Bed":
             self._min_w, self._min_h = 100.0, 80.0
         elif self.kind == "Sofa":
             self._min_w, self._min_h = 120.0, 50.0
-        elif self.kind=="Wardrobe":
-            self._min_w, self._min_h = 90.0, 60.0
+        elif self.kind == "Wardrobe":
+            self._min_w, self._min_h = 70.0, 40.0
+        elif self.kind == "Chair":
+            self._min_w, self._min_h = 30.0, 34.0
+        elif self.kind == "Plant":
+            self._min_w, self._min_h = 70.0, 80.0
+
 
         self.setFlags(
-            QtWidgets.QGraphicsItem.ItemIsMovable |
-            QtWidgets.QGraphicsItem.ItemIsSelectable |
-            QtWidgets.QGraphicsItem.ItemSendsGeometryChanges |
-            QtWidgets.QGraphicsItem.ItemIsFocusable
+            QtWidgets.QGraphicsItem.ItemIsMovable
+            | QtWidgets.QGraphicsItem.ItemIsSelectable
+            | QtWidgets.QGraphicsItem.ItemSendsGeometryChanges
+            | QtWidgets.QGraphicsItem.ItemIsFocusable
         )
-    
+
         self.handle = ResizeHandle(self)
         self.handle.hide()
         self.update_handles()
@@ -114,100 +120,97 @@ class FurnitureItem(QtWidgets.QGraphicsRectItem):
         w, h = r.width(), r.height()
 
         if self.kind == "Bed":
-            painter.setPen(QPen(Qt.black, 2))
-            painter.setBrush(QColor(240, 240, 240)) 
+            painter.setPen(QPen(QtCore.Qt.black, 2))
+            painter.setBrush(QColor(240, 240, 240))
             painter.drawRect(r)
-
-            painter.setPen(QPen(Qt.black, 1))
-            painter.setBrush(QColor(220, 220, 220)) 
+            painter.setPen(QPen(QtCore.Qt.black, 1))
+            painter.setBrush(QColor(220, 220, 220))
             head_h = min(20.0, h * 0.2)
             painter.drawRect(0, 0, w, head_h)
-
-            painter.setBrush(Qt.white) 
+            painter.setBrush(QtCore.Qt.white)
             pw, ph = w * 0.2, h * 0.18
             painter.drawRect(10, 5, pw, ph)
             painter.drawRect(w - 10 - pw, 5, pw, ph)
 
         elif self.kind == "Sofa":
-            painter.setPen(QPen(Qt.black, 2))
-            painter.setBrush(QColor(240, 240, 240)) 
+            painter.setPen(QPen(QtCore.Qt.black, 2))
+            painter.setBrush(QColor(240, 240, 240))
             painter.drawRect(r)
-
-            painter.setPen(QPen(Qt.black, 1))
-            painter.setBrush(QColor(220, 220, 220)) 
+            painter.setPen(QPen(QtCore.Qt.black, 1))
+            painter.setBrush(QColor(220, 220, 220))
             painter.drawRect(0, 0, w, h * 0.2)
-
-            painter.setBrush(Qt.white) 
+            painter.setBrush(QtCore.Qt.white)
             cw, ch = w * 0.2, h * 0.4
             painter.drawRect(12, h * 0.25, cw, ch)
             painter.drawRect(w - 12 - cw, h * 0.25, cw, ch)
 
         elif self.kind == "Table":
-            r = self.rect()
-            w, h = r.width(), r.height()
-
-            painter.setPen(QPen(Qt.black, 2))
-            painter.setBrush(QColor(240, 240, 240))
-
+            painter.setPen(QPen(QtCore.Qt.black, 2))
+            painter.setBrush(QtCore.Qt.white)
             m = max(6.0, min(w, h) * 0.08)
-            seat_h = max(18.0, h * 0.16)
-            back_h = max(6.0, seat_h * 0.3)
-
-            top_gap = max(6.0, h * 0.08)
             table_w = max(40.0, w - 2 * m)
-            table_h = max(30.0, h - 2 * (m + seat_h + back_h))
+            table_h = max(30.0, h - 2 * m)
             table_x = (w - table_w) / 2.0
-            table_y = m + seat_h + back_h
-
+            table_y = (h - table_h) / 2.0
             path = QtGui.QPainterPath()
             path.addRoundedRect(QtCore.QRectF(table_x, table_y, table_w, table_h), 12, 12)
             painter.drawPath(path)
 
-            painter.setPen(QPen(Qt.black, 1))
-            painter.setBrush(Qt.white)
-            seat_w = max(24.0, table_w * 0.18)
-            gaps = 4.0
-            spacing = max(4.0, (table_w - 3 * seat_w) / gaps)
-            cx = table_x + spacing
+        elif self.kind == "Wardrobe":
+            painter.setPen(QPen(QtCore.Qt.black, 2))
+            painter.setBrush(QtCore.Qt.white)
+            painter.drawRect(r)
+            painter.setPen(QPen(QtCore.Qt.black, 1))
+            painter.drawLine(w * 0.5, 0, w * 0.5, h)
+            painter.setBrush(QColor(230, 230, 230))
+            r = max(2.0, min(w, h) * 0.04)
+            painter.drawEllipse(QtCore.QPointF(w * 0.5 - w * 0.15, h * 0.5), r, r)
+            painter.drawEllipse(QtCore.QPointF(w * 0.5 + w * 0.15, h * 0.5), r, r)
 
-            y_top_seat = m + back_h - top_gap
-            y_top_back = m - top_gap
-            y_bot_seat = table_y + table_h + m
-            y_bot_back = y_bot_seat + seat_h
+        elif self.kind == "Chair":
+            painter.setPen(QPen(QtCore.Qt.black, 2))
+            painter.setBrush(QtCore.Qt.white)
+            m = max(3.0, min(w, h) * 0.08)
+            seat_w = max(20.0, w - 2 * m)
+            seat_h = max(18.0, h * 0.5)
+            seat_x = (w - seat_w) / 2.0
+            seat_y = h - m - seat_h
+            painter.drawRect(seat_x, seat_y, seat_w, seat_h)
+            painter.setPen(QPen(QtCore.Qt.black, 1))
+            back_h = max(6.0, h * 0.2)
+            back_w = seat_w
+            back_x = seat_x
+            back_y = max(0.0, seat_y - back_h)
+            painter.drawRect(back_x, back_y, back_w, back_h)
 
-            for _ in range(3):
-                painter.drawRect(cx, y_top_seat, seat_w, seat_h) 
-                painter.drawRect(cx, y_top_back, seat_w, back_h) 
-                painter.drawRect(cx, y_bot_seat, seat_w, seat_h) 
-                painter.drawRect(cx, y_bot_back, seat_w, back_h) 
-                cx += seat_w + spacing
+        elif self.kind == "Plant":
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setPen(QPen(QtCore.Qt.black, max(1.5, min(w, h) * 0.02)))
 
-        elif self.kind=="Wardrobe":
-            painter.setPen(QPen(QtGui.Qt.black, 2))
-            painter.setBrush(QColor(240, 240, 240))
-            painter.drawRect(r) 
+            cx, cy = w / 2.0, h / 2.0
+            R = min(w, h) * 0.25
+            r = R * 0.5
 
-            painter.setPen(QPen(QtGui.Qt.black, 1))
-            margin = max(4.0, min(w, h) * 0.05)
-            painter.drawLine(w * 0.5, margin, w * 0.5, h - margin)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.drawEllipse(QtCore.QPointF(cx, cy), R, R)
+            painter.drawEllipse(QtCore.QPointF(cx, cy), r, r)
 
+            painter.setBrush(QColor(140, 200, 140))
+            leaf_w = r * 1.4
+            leaf_h = r * 0.8
+            center_up = cy - r * 0.05
 
-            base_h = max(4.0, h * 0.06)
-            painter.setBrush(QColor(220, 220, 220))
-            painter.drawRect(0, h - base_h, w, base_h)
+            for ang in (-20, 100, 220):
+                painter.save()
+                painter.translate(cx, center_up)
+                painter.rotate(ang)
+                painter.drawEllipse(QtCore.QRectF(-leaf_w/2.0, -leaf_h/2.0, leaf_w, leaf_h))
+                painter.restore()
 
-            painter.setBrush(QtGui.Qt.white)
-            handle_h = max(12.0, h * 0.18)
-            handle_w = max(4.0,  w * 0.06)
-            handle_gap = max(6.0, w * 0.06)
+            dot = r * 0.12
+            painter.drawEllipse(QtCore.QPointF(cx, center_up), dot, dot)
 
-            y = (h - handle_h) / 2.0
-            x_left  = (w * 0.5) - handle_gap - handle_w
-            x_right = (w * 0.5) + handle_gap
-            painter.drawRoundedRect(x_left,  y, handle_w, handle_h, 2, 2)
-            painter.drawRoundedRect(x_right, y, handle_w, handle_h, 2, 2)
-            
         else:
-            painter.setPen(QPen(Qt.black, 1))
-            painter.setBrush(Qt.white)
+            painter.setPen(QPen(QtCore.Qt.black, 1))
+            painter.setBrush(QtCore.Qt.white)
             painter.drawRect(r)
