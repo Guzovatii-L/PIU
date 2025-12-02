@@ -1,6 +1,6 @@
 from PySide6 import QtCore
 from PySide6.QtCore import Qt, QPointF
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QKeySequence, QUndoStack
 from PySide6.QtWidgets import (
     QMainWindow, QToolBar, QDockWidget, QListWidget, QListWidgetItem,
     QMessageBox
@@ -20,6 +20,8 @@ class MainWindow(QMainWindow):
         self.scene = CanvasScene(parent=self)
         self.view = CanvasView(self.scene, parent=self)
         self.setCentralWidget(self.view)
+
+        self.undo_stack = QUndoStack(self)
 
         self.status = self.statusBar()
         self.view.mouse_moved.connect(self._on_mouse_moved)
@@ -52,10 +54,16 @@ class MainWindow(QMainWindow):
         self.act_open.setShortcut(QKeySequence.Open)
         self.act_save.setShortcut(QKeySequence.Save)
 
-        self.act_undo = QAction("Undo", self)
-        self.act_redo = QAction("Redo", self)
+        self.act_undo = self.undo_stack.createUndoAction(self, "Undo")
+        self.act_redo = self.undo_stack.createRedoAction(self, "Redo")
+
         self.act_undo.setShortcut(QKeySequence.Undo)
         self.act_redo.setShortcut(QKeySequence.Redo)
+
+        self.undo_stack.canUndoChanged.connect(self.act_undo.setEnabled)
+        self.undo_stack.canRedoChanged.connect(self.act_redo.setEnabled)
+        self.act_undo.setEnabled(self.undo_stack.canUndo())
+        self.act_redo.setEnabled(self.undo_stack.canRedo())
 
         tb.addActions([self.act_new, self.act_open, self.act_save, self.act_export])
         tb.addSeparator()
@@ -63,8 +71,8 @@ class MainWindow(QMainWindow):
 
         for a, name in [
             (self.act_new, "New"), (self.act_open, "Open"),
-            (self.act_save, "Save"), (self.act_export, "Export"),
-            (self.act_undo, "Undo"), (self.act_redo, "Redo")]:
+            (self.act_save, "Save"),
+            (self.act_export, "Export")]:
             a.triggered.connect(lambda _=False, n=name: self._stub_action(n))
 
     def _build_right_palette(self):
