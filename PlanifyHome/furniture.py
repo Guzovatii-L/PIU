@@ -12,6 +12,7 @@ class ResizeHandle(QtWidgets.QGraphicsRectItem):
         super().__init__(-self.SIZE / 2, -self.SIZE / 2, self.SIZE, self.SIZE, parent_item)
         self._parent = parent_item
         self._parent_was_movable = False
+        self._start_rect = None
 
         self.setBrush(QtCore.Qt.white)
         self.setPen(QPen(QtCore.Qt.black, 1))
@@ -31,12 +32,24 @@ class ResizeHandle(QtWidgets.QGraphicsRectItem):
         self._parent_was_movable = bool(self._parent.flags() & QtWidgets.QGraphicsItem.ItemIsMovable)
         if self._parent_was_movable:
             self._parent.setFlag(QtWidgets.QGraphicsItem.ItemIsMovable, False)
+        self._start_rect = self._parent.rect()
         event.accept()
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent):
         if self._parent_was_movable:
             self._parent.setFlag(QtWidgets.QGraphicsItem.ItemIsMovable, True)
+
+        if self._start_rect is not None:
+            end_rect = self._parent.rect()
+            changed = abs(end_rect.width() - self._start_rect.width()) > 0.1 or abs(end_rect.height() - self._start_rect.height()) > 0.1
+            if changed:
+                scene = self._parent.scene()
+                if scene and hasattr(scene, "_get_undo_stack"):
+                    undo_stack = scene._get_undo_stack()
+                    if undo_stack:
+                        from command import ResizeItemCommand
+                        undo_stack.push(ResizeItemCommand(self._parent, self._start_rect, end_rect, f"Resize {self._parent.kind}"))
         event.accept()
         super().mouseReleaseEvent(event)
 
@@ -79,7 +92,6 @@ class FurnitureItem(QtWidgets.QGraphicsRectItem):
             self._min_w, self._min_h = 30.0, 34.0
         elif self.kind == "Plant":
             self._min_w, self._min_h = 70.0, 80.0
-
 
         self.setFlags(
             QtWidgets.QGraphicsItem.ItemIsMovable
@@ -163,9 +175,9 @@ class FurnitureItem(QtWidgets.QGraphicsRectItem):
             painter.setPen(QPen(QtCore.Qt.black, 1))
             painter.drawLine(w * 0.5, 0, w * 0.5, h)
             painter.setBrush(QColor(230, 230, 230))
-            r = max(2.0, min(w, h) * 0.04)
-            painter.drawEllipse(QtCore.QPointF(w * 0.5 - w * 0.15, h * 0.5), r, r)
-            painter.drawEllipse(QtCore.QPointF(w * 0.5 + w * 0.15, h * 0.5), r, r)
+            rr = max(2.0, min(w, h) * 0.04)
+            painter.drawEllipse(QtCore.QPointF(w * 0.5 - w * 0.15, h * 0.5), rr, rr)
+            painter.drawEllipse(QtCore.QPointF(w * 0.5 + w * 0.15, h * 0.5), rr, rr)
 
         elif self.kind == "Chair":
             painter.setPen(QPen(QtCore.Qt.black, 2))
@@ -186,28 +198,23 @@ class FurnitureItem(QtWidgets.QGraphicsRectItem):
         elif self.kind == "Plant":
             painter.setRenderHint(QPainter.Antialiasing)
             painter.setPen(QPen(QtCore.Qt.black, max(1.5, min(w, h) * 0.02)))
-
             cx, cy = w / 2.0, h / 2.0
             R = min(w, h) * 0.25
-            r = R * 0.5
-
+            r2 = R * 0.5
             painter.setBrush(QtCore.Qt.NoBrush)
             painter.drawEllipse(QtCore.QPointF(cx, cy), R, R)
-            painter.drawEllipse(QtCore.QPointF(cx, cy), r, r)
-
+            painter.drawEllipse(QtCore.QPointF(cx, cy), r2, r2)
             painter.setBrush(QColor(140, 200, 140))
-            leaf_w = r * 1.4
-            leaf_h = r * 0.8
-            center_up = cy - r * 0.05
-
+            leaf_w = r2 * 1.4
+            leaf_h = r2 * 0.8
+            center_up = cy - r2 * 0.05
             for ang in (-20, 100, 220):
                 painter.save()
                 painter.translate(cx, center_up)
                 painter.rotate(ang)
-                painter.drawEllipse(QtCore.QRectF(-leaf_w/2.0, -leaf_h/2.0, leaf_w, leaf_h))
+                painter.drawEllipse(QtCore.QRectF(-leaf_w / 2.0, -leaf_h / 2.0, leaf_w, leaf_h))
                 painter.restore()
-
-            dot = r * 0.12
+            dot = r2 * 0.12
             painter.drawEllipse(QtCore.QPointF(cx, center_up), dot, dot)
 
         else:

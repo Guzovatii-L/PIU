@@ -1,10 +1,7 @@
 from PySide6 import QtCore
 from PySide6.QtCore import Qt, QPointF
 from PySide6.QtGui import QAction, QKeySequence, QUndoStack
-from PySide6.QtWidgets import (
-    QMainWindow, QToolBar, QDockWidget, QListWidget, QListWidgetItem,
-    QMessageBox
-)
+from PySide6.QtWidgets import QMainWindow, QToolBar, QDockWidget, QListWidget, QListWidgetItem, QMessageBox
 
 from constants import TOOLS, FURNITURE
 from canvas_scene import CanvasScene
@@ -22,6 +19,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.view)
 
         self.undo_stack = QUndoStack(self)
+        self.undo_stack.indexChanged.connect(lambda _i: self.scene.show_wall_end_markers())
 
         self.status = self.statusBar()
         self.view.mouse_moved.connect(self._on_mouse_moved)
@@ -34,7 +32,6 @@ class MainWindow(QMainWindow):
     def set_mode(self, label: str):
         self._current_mode = label
         self._update_status_ready()
-
         if hasattr(self, "scene"):
             if label == "Wall":
                 self.scene.show_wall_end_markers()
@@ -56,10 +53,8 @@ class MainWindow(QMainWindow):
 
         self.act_undo = self.undo_stack.createUndoAction(self, "Undo")
         self.act_redo = self.undo_stack.createRedoAction(self, "Redo")
-
         self.act_undo.setShortcut(QKeySequence.Undo)
         self.act_redo.setShortcut(QKeySequence.Redo)
-
         self.undo_stack.canUndoChanged.connect(self.act_undo.setEnabled)
         self.undo_stack.canRedoChanged.connect(self.act_redo.setEnabled)
         self.act_undo.setEnabled(self.undo_stack.canUndo())
@@ -69,10 +64,7 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addActions([self.act_undo, self.act_redo])
 
-        for a, name in [
-            (self.act_new, "New"), (self.act_open, "Open"),
-            (self.act_save, "Save"),
-            (self.act_export, "Export")]:
+        for a, name in [(self.act_new, "New"), (self.act_open, "Open"), (self.act_save, "Save"), (self.act_export, "Export")]:
             a.triggered.connect(lambda _=False, n=name: self._stub_action(n))
 
     def _build_right_palette(self):
@@ -121,6 +113,4 @@ class MainWindow(QMainWindow):
 
     @QtCore.Slot(QPointF)
     def _on_mouse_moved(self, p: QPointF):
-        self.status.showMessage(
-            f"x={p.x():.0f} y={p.y():.0f} | Mode: {self._current_mode} | Zoom: Ctrl+Wheel | Pan: Space+Drag"
-        )
+        self.status.showMessage(f"x={p.x():.0f} y={p.y():.0f} | Mode: {self._current_mode} | Zoom: Ctrl+Wheel | Pan: Space+Drag")
