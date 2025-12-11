@@ -48,17 +48,23 @@ class WallHandle(QtWidgets.QGraphicsEllipseItem):
 
     def itemChange(self, change, value):
         if change == QtWidgets.QGraphicsItem.ItemPositionChange:
-            scene = self.wall_item.scene()
-            new_pos = scene.snap_to_grid(value) if hasattr(scene, 'snap_to_grid') else value
+            sc = self.wall_item.scene()
+            new_scene_pos = sc.snap_to_grid(value) if sc and hasattr(sc, 'snap_to_grid') else value
+            local = self.wall_item.mapFromScene(new_scene_pos)
+
             line = self.wall_item.line()
             if self.end_index == 1:
-                line.setP1(new_pos)
+                line.setP1(local)
             else:
-                line.setP2(new_pos)
-            self.wall_item.setPos(QPointF(0, 0))
+                line.setP2(local)
+
             self.wall_item.setLine(line)
-            return new_pos
+            self.wall_item._update_dimension_text()
+            return new_scene_pos
+
         return super().itemChange(change, value)
+
+
 
 
 class WallItem(QtWidgets.QGraphicsLineItem):
@@ -98,7 +104,10 @@ class WallItem(QtWidgets.QGraphicsLineItem):
             return
         line = self.line()
         length = self._get_wall_length()
-        mid = (line.p1() + line.p2()) / 2
+
+        mid_local = (line.p1() + line.p2()) / 2
+        mid_scene = self.mapToScene(mid_local)
+
         text = f"{length:.0f}"
         if self.dimension_text is None:
             self.dimension_text = QGraphicsSimpleTextItem(text)
@@ -111,7 +120,7 @@ class WallItem(QtWidgets.QGraphicsLineItem):
         self.dimension_text.setText(text)
         angle = math.degrees(math.atan2(line.dy(), line.dx()))
         t = QTransform()
-        t.translate(mid.x(), mid.y())
+        t.translate(mid_scene.x(), mid_scene.y())
         t.rotate(angle)
         t.translate(0, -15)
         if 85 < abs(angle) < 95:
@@ -133,8 +142,11 @@ class WallItem(QtWidgets.QGraphicsLineItem):
             for h in self.handles:
                 self.scene().addItem(h)
                 h.setVisible(self.isSelected())
-        self.handles[0].setPos(line.p1())
-        self.handles[1].setPos(line.p2())
+        p1_scene = self.mapToScene(line.p1())
+        p2_scene = self.mapToScene(line.p2())
+        self.handles[0].setPos(p1_scene)
+        self.handles[1].setPos(p2_scene)
+
         if self.isSelected():
             self._update_dimension_text()
 
@@ -150,13 +162,18 @@ class WallItem(QtWidgets.QGraphicsLineItem):
             self._show_handles(value)
             if value:
                 self._update_dimension_text()
+
         elif change == QtWidgets.QGraphicsItem.ItemPositionChange:
-            scene = self.scene()
-            if scene and hasattr(scene, 'snap_to_grid'):
-                return scene.snap_to_grid(value)
+            sc = self.scene()
+            if sc and hasattr(sc, 'snap_to_grid'):
+                return sc.snap_to_grid(value)
+            return value
+
         elif change == QtWidgets.QGraphicsItem.ItemPositionHasChanged:
             self._update_handles()
+
         return super().itemChange(change, value)
+
 
     def prepare_for_delete(self):
         sc = self.scene()
@@ -299,21 +316,38 @@ class CanvasScene(QGraphicsScene):
         for it in self.items():
             if isinstance(it, WallItem):
                 line = it.line()
-                for pt in (line.p1(), line.p2()):
-                    marker = self.addEllipse(pt.x() - radius, pt.y() - radius, radius * 2, radius * 2, QPen(Qt.darkGray), QBrush(Qt.green))
+                p1 = it.mapToScene(line.p1())
+                p2 = it.mapToScene(line.p2())
+                for pt in (p1, p2):
+                    marker = self.addEllipse(pt.x() - radius, pt.y() - radius,
+                                         radius * 2, radius * 2,
+                                         QPen(Qt.darkGray), QBrush(Qt.green))
                     marker.setZValue(1000)
                     self._wall_end_markers.append(marker)
 
     def _exit_drawing_mode(self):
-        if self._current_item is not None:
-            items_to_remove = self._current_item if isinstance(self._current_item, tuple) else (self._current_item,)
-            for item in items_to_remove:
-                if item is not None and item.scene() is self:
-                    self.removeItem(item)
-            self._current_item = None
-            self.show_wall_end_markers()
-            if self.parent_widget:
-                self.parent_widget.set_mode("Select")
+        if self._current_item is None:
+            return
+
+        if isinstance(self._current_item, WallItem):
+            wall = self._current_item
+            wall.prepare_for_delete()
+            if wall.scene() is self:
+                self.removeItem(wall)
+
+        elif isinstance(self._current_item, tuple):
+            for it in self._current_item:
+                if it is not None and it.scene() is self:
+                    self.removeItem(it)
+
+        elif isinstance(self._current_item, QtWidgets.QGraphicsItem):
+            if self._current_item.scene() is self:
+                self.removeItem(self._current_item)
+
+        self._current_item = None
+        self.show_wall_end_markers()
+        if self.parent_widget:
+            self.parent_widget.set_mode("Select")
 
     def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent):
         from furniture import ResizeHandle
@@ -336,6 +370,7 @@ class CanvasScene(QGraphicsScene):
             else:
                 current_wall: WallItem = self._current_item
                 if current_wall._get_wall_length() < GRID_SIZE / 2:
+                    current_wall.prepare_for_delete()
                     self.removeItem(current_wall)
                 else:
                     self._items.append(current_wall)
