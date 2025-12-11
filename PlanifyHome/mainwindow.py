@@ -1,7 +1,11 @@
 from PySide6 import QtCore
 from PySide6.QtCore import Qt, QPointF
-from PySide6.QtGui import QAction, QKeySequence, QUndoStack
-from PySide6.QtWidgets import QMainWindow, QToolBar, QDockWidget, QListWidget, QListWidgetItem, QMessageBox
+from PySide6.QtGui import QAction, QKeySequence, QUndoStack, QImage, QPainter
+from PySide6.QtWidgets import (
+    QMainWindow, QToolBar, QDockWidget, QListWidget, QListWidgetItem,
+    QMessageBox, QFileDialog
+)
+import json
 
 from constants import TOOLS, FURNITURE
 from canvas_scene import CanvasScene
@@ -19,7 +23,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.view)
 
         self.undo_stack = QUndoStack(self)
-        self.undo_stack.indexChanged.connect(lambda _i: self.scene.show_wall_end_markers())
 
         self.status = self.statusBar()
         self.view.mouse_moved.connect(self._on_mouse_moved)
@@ -47,6 +50,7 @@ class MainWindow(QMainWindow):
         self.act_open = QAction("Open", self)
         self.act_save = QAction("Save", self)
         self.act_export = QAction("Export", self)
+
         self.act_new.setShortcut(QKeySequence.New)
         self.act_open.setShortcut(QKeySequence.Open)
         self.act_save.setShortcut(QKeySequence.Save)
@@ -64,8 +68,10 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addActions([self.act_undo, self.act_redo])
 
-        for a, name in [(self.act_new, "New"), (self.act_open, "Open"), (self.act_save, "Save"), (self.act_export, "Export")]:
-            a.triggered.connect(lambda _=False, n=name: self._stub_action(n))
+        self.act_new.triggered.connect(self._action_new)
+        self.act_open.triggered.connect(self._action_open)
+        self.act_save.triggered.connect(self._action_save)
+        self.act_export.triggered.connect(self._action_export)
 
     def _build_right_palette(self):
         dock = QDockWidget("Palette", self)
@@ -94,8 +100,70 @@ class MainWindow(QMainWindow):
         self.list.itemClicked.connect(self._palette_clicked)
         dock.setWidget(self.list)
 
-    def _stub_action(self, name: str):
-        QMessageBox.information(self, name, f"'{name}' is not implemented yet. (UI only)")
+    def _action_new(self):
+        try:
+            self.scene.load_from_json({"walls": [], "doors": [], "windows": [], "furniture": []})
+            self.set_mode("Select")
+        except Exception as e:
+            QMessageBox.critical(self, "New failed", str(e))
+
+    def _action_open(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Open", "", "Planify (*.json);;All files (*)")
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.scene.load_from_json(data)
+            self.set_mode("Select")
+        except Exception as e:
+            QMessageBox.critical(self, "Open failed", str(e))
+
+    def _action_save(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Save", "plan.json", "Planify (*.json);;All files (*)")
+        if not path:
+            return
+        try:
+            data = self.scene.to_json()
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            QMessageBox.critical(self, "Save failed", str(e))
+
+    def _action_export(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Export image", "plan.png", "PNG Image (*.png)")
+        if not path:
+            return
+        try:
+            self._export_png(path)
+            QMessageBox.information(self, "Export", "Image exported.")
+        except Exception as e:
+            QMessageBox.critical(self, "Export failed", str(e))
+
+    def _export_png(self, path: str, scale: float = 2.0):
+        self.scene.clearSelection()
+        self.scene.clear_wall_end_markers()
+
+        rect = self.scene.itemsBoundingRect()
+        if rect.isEmpty():
+            rect = self.scene.sceneRect()
+        rect = rect.marginsAdded(QtCore.QMarginsF(10, 10, 10, 10))
+
+        w = max(1, int(rect.width() * scale))
+        h = max(1, int(rect.height() * scale))
+
+        img = QImage(w, h, QImage.Format_ARGB32_Premultiplied)
+        img.fill(Qt.white)
+
+        p = QPainter(img)
+        p.setRenderHint(QPainter.Antialiasing, True)
+
+        target = QtCore.QRectF(0, 0, w, h)
+        self.scene.render(p, target, rect)
+
+        p.end()
+        img.save(path)
+
 
     @QtCore.Slot(QListWidgetItem)
     def _palette_clicked(self, item: QListWidgetItem):
@@ -113,4 +181,6 @@ class MainWindow(QMainWindow):
 
     @QtCore.Slot(QPointF)
     def _on_mouse_moved(self, p: QPointF):
-        self.status.showMessage(f"x={p.x():.0f} y={p.y():.0f} | Mode: {self._current_mode} | Zoom: Ctrl+Wheel | Pan: Space+Drag")
+        self.status.showMessage(
+            f"x={p.x():.0f} y={p.y():.0f} | Mode: {self._current_mode} | Zoom: Ctrl+Wheel | Pan: Space+Drag"
+        )

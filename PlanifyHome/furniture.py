@@ -1,9 +1,7 @@
 from __future__ import annotations
-
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import QPointF
 from PySide6.QtGui import QPainter, QPen, QColor
-
 
 class ResizeHandle(QtWidgets.QGraphicsRectItem):
     SIZE = 14
@@ -13,14 +11,12 @@ class ResizeHandle(QtWidgets.QGraphicsRectItem):
         self._parent = parent_item
         self._parent_was_movable = False
         self._start_rect = None
-
         self.setBrush(QtCore.Qt.white)
         self.setPen(QPen(QtCore.Qt.black, 1))
         self.setCursor(QtCore.Qt.SizeFDiagCursor)
         self.setZValue(1_000_000)
         self.setAcceptedMouseButtons(QtCore.Qt.LeftButton)
         self.setAcceptHoverEvents(True)
-
         self.setFlags(
             QtWidgets.QGraphicsItem.ItemIsMovable
             | QtWidgets.QGraphicsItem.ItemSendsGeometryChanges
@@ -39,17 +35,16 @@ class ResizeHandle(QtWidgets.QGraphicsRectItem):
     def mouseReleaseEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent):
         if self._parent_was_movable:
             self._parent.setFlag(QtWidgets.QGraphicsItem.ItemIsMovable, True)
-
         if self._start_rect is not None:
             end_rect = self._parent.rect()
             changed = abs(end_rect.width() - self._start_rect.width()) > 0.1 or abs(end_rect.height() - self._start_rect.height()) > 0.1
             if changed:
-                scene = self._parent.scene()
-                if scene and hasattr(scene, "_get_undo_stack"):
-                    undo_stack = scene._get_undo_stack()
-                    if undo_stack:
-                        from command import ResizeItemCommand
-                        undo_stack.push(ResizeItemCommand(self._parent, self._start_rect, end_rect, f"Resize {self._parent.kind}"))
+                sc = self._parent.scene()
+                if sc and hasattr(sc, "_get_undo_stack"):
+                    us = sc._get_undo_stack()
+                    if us:
+                        import command
+                        us.push(command.ResizeItemCommand(self._parent, self._start_rect, end_rect, f"Resize {self._parent.kind}"))
         event.accept()
         super().mouseReleaseEvent(event)
 
@@ -78,7 +73,6 @@ class FurnitureItem(QtWidgets.QGraphicsRectItem):
         super().__init__(0, 0, w, h)
         self.kind = kind
         self.setPos(x, y)
-
         self._min_w, self._min_h = 60.0, 40.0
         if self.kind == "Table":
             self._min_w, self._min_h = 80.0, 50.0
@@ -92,14 +86,12 @@ class FurnitureItem(QtWidgets.QGraphicsRectItem):
             self._min_w, self._min_h = 30.0, 34.0
         elif self.kind == "Plant":
             self._min_w, self._min_h = 70.0, 80.0
-
         self.setFlags(
             QtWidgets.QGraphicsItem.ItemIsMovable
             | QtWidgets.QGraphicsItem.ItemIsSelectable
             | QtWidgets.QGraphicsItem.ItemSendsGeometryChanges
             | QtWidgets.QGraphicsItem.ItemIsFocusable
         )
-
         self.handle = ResizeHandle(self)
         self.handle.hide()
         self.update_handles()

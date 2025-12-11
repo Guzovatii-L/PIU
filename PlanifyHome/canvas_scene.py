@@ -1,12 +1,10 @@
 import math
+import command
 from typing import Tuple, List
-
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt, QPointF, QRectF
 from PySide6.QtGui import QPainter, QPen, QColor, QBrush, QTransform, QFont, QPainterPath, QUndoStack
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsLineItem, QGraphicsPathItem
-
-from command import AddItemCommand, DeleteItemsCommand
 from furniture import FurnitureItem
 from constants import SCENE_MARGIN, GRID_SIZE
 
@@ -18,9 +16,10 @@ class PlanItem:
 
 
 class WallHandle(QtWidgets.QGraphicsEllipseItem):
-    def __init__(self, wall_item: "WallItem", end_index: int):
+    def __init__(self, wall_item: 'WallItem', end_index: int):
         self.wall_item = wall_item
         self.end_index = end_index
+        self._start_line = None
         radius = 8
         super().__init__(-radius, -radius, radius * 2, radius * 2)
         self.setPen(QPen(Qt.black, 1))
@@ -29,10 +28,28 @@ class WallHandle(QtWidgets.QGraphicsEllipseItem):
         self.setFlag(QtWidgets.QGraphicsItem.ItemSendsGeometryChanges, True)
         self.setZValue(100)
 
+    def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent):
+        self._start_line = QtGui.QLineF(self.wall_item.line())
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent):
+        if self._start_line is not None:
+            end_line = QtGui.QLineF(self.wall_item.line())
+            if end_line.p1() != self._start_line.p1() or end_line.p2() != self._start_line.p2():
+                sc = self.wall_item.scene()
+                if sc and hasattr(sc, "_get_undo_stack"):
+                    us = sc._get_undo_stack()
+                    if us:
+                        us.push(command.WallResizeCommand(self.wall_item, self._start_line, end_line, "Resize Wall"))
+        sc2 = self.wall_item.scene()
+        if sc2 and hasattr(sc2, "show_wall_end_markers"):
+            sc2.show_wall_end_markers()
+        super().mouseReleaseEvent(event)
+
     def itemChange(self, change, value):
         if change == QtWidgets.QGraphicsItem.ItemPositionChange:
             scene = self.wall_item.scene()
-            new_pos = scene.snap_to_grid(value) if hasattr(scene, "snap_to_grid") else value
+            new_pos = scene.snap_to_grid(value) if hasattr(scene, 'snap_to_grid') else value
             line = self.wall_item.line()
             if self.end_index == 1:
                 line.setP1(new_pos)
@@ -81,7 +98,7 @@ class WallItem(QtWidgets.QGraphicsLineItem):
             return
         line = self.line()
         length = self._get_wall_length()
-        mid_point = (line.p1() + line.p2()) / 2
+        mid = (line.p1() + line.p2()) / 2
         text = f"{length:.0f}"
         if self.dimension_text is None:
             self.dimension_text = QGraphicsSimpleTextItem(text)
@@ -93,14 +110,14 @@ class WallItem(QtWidgets.QGraphicsLineItem):
             self.scene().addItem(self.dimension_text)
         self.dimension_text.setText(text)
         angle = math.degrees(math.atan2(line.dy(), line.dx()))
-        transform = QTransform()
-        transform.translate(mid_point.x(), mid_point.y())
-        transform.rotate(angle)
-        transform.translate(0, -15)
-        if abs(angle) > 85 and abs(angle) < 95:
-            transform.rotate(90)
-            transform.translate(15, 0)
-        self.dimension_text.setTransform(transform)
+        t = QTransform()
+        t.translate(mid.x(), mid.y())
+        t.rotate(angle)
+        t.translate(0, -15)
+        if 85 < abs(angle) < 95:
+            t.rotate(90)
+            t.translate(15, 0)
+        self.dimension_text.setTransform(t)
 
     def _show_dimension_text(self, show: bool):
         if self.dimension_text:
@@ -135,21 +152,21 @@ class WallItem(QtWidgets.QGraphicsLineItem):
                 self._update_dimension_text()
         elif change == QtWidgets.QGraphicsItem.ItemPositionChange:
             scene = self.scene()
-            if scene and hasattr(scene, "snap_to_grid"):
+            if scene and hasattr(scene, 'snap_to_grid'):
                 return scene.snap_to_grid(value)
         elif change == QtWidgets.QGraphicsItem.ItemPositionHasChanged:
             self._update_handles()
         return super().itemChange(change, value)
 
     def prepare_for_delete(self):
-        scene = self.scene()
-        if scene:
+        sc = self.scene()
+        if sc:
             for h in self.handles:
-                if h.scene() == scene:
-                    scene.removeItem(h)
+                if h.scene() == sc:
+                    sc.removeItem(h)
             self.handles.clear()
-            if self.dimension_text and self.dimension_text.scene() == scene:
-                scene.removeItem(self.dimension_text)
+            if self.dimension_text and self.dimension_text.scene() == sc:
+                sc.removeItem(self.dimension_text)
             self.dimension_text = None
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, False)
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsMovable, False)
@@ -164,13 +181,11 @@ class CanvasScene(QGraphicsScene):
         self._wall_end_markers = []
         self.parent_widget = parent
         self._door_ccw = True
-        self._door_groups = {}
         self._next_door_id = 1
-        self._window_groups = {}
         self._next_window_id = 1
 
     def _get_undo_stack(self) -> QUndoStack | None:
-        if self.parent_widget and hasattr(self.parent_widget, "undo_stack"):
+        if self.parent_widget and hasattr(self.parent_widget, 'undo_stack'):
             return self.parent_widget.undo_stack
         return None
 
@@ -212,12 +227,13 @@ class CanvasScene(QGraphicsScene):
         arc_item.setPath(self._door_path(start, end))
         door_id = self._next_door_id
         self._next_door_id += 1
+        orientation_flag = 1 if self._door_ccw else 0
         for it in (line_item, arc_item):
             it.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, True)
             it.setData(0, "door")
             it.setData(1, door_id)
-        self._door_groups[door_id] = (line_item, arc_item)
-        return line_item, arc_item
+            it.setData(2, orientation_flag)
+        return (line_item, arc_item)
 
     def add_window(self, start: QPointF, end: QPointF) -> Tuple[QGraphicsLineItem, QGraphicsLineItem, QGraphicsLineItem]:
         win_id = self._next_window_id
@@ -228,8 +244,9 @@ class CanvasScene(QGraphicsScene):
         line_item.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, True)
         line_item.setData(0, "window")
         line_item.setData(1, win_id)
+        dx = end.x() - start.x()
         length = 10
-        if abs(end.x() - start.x()) < 1e-3:
+        if dx == 0:
             l1 = QGraphicsLineItem(start.x() - length / 2, start.y(), start.x() + length / 2, start.y())
             l2 = QGraphicsLineItem(end.x() - length / 2, end.y(), end.x() + length / 2, end.y())
         else:
@@ -239,8 +256,7 @@ class CanvasScene(QGraphicsScene):
             deco.setPen(QPen(Qt.red, 2))
             deco.setData(0, "window_deco")
             deco.setData(1, win_id)
-        self._window_groups[win_id] = (line_item, l1, l2)
-        return line_item, l1, l2
+        return (line_item, l1, l2)
 
     def add_bed(self, center: QPointF) -> FurnitureItem:
         w, h = 200.0, 160.0
@@ -280,9 +296,9 @@ class CanvasScene(QGraphicsScene):
     def show_wall_end_markers(self):
         self.clear_wall_end_markers()
         radius = 4
-        for item in self.items():
-            if isinstance(item, WallItem):
-                line = item.line()
+        for it in self.items():
+            if isinstance(it, WallItem):
+                line = it.line()
                 for pt in (line.p1(), line.p2()):
                     marker = self.addEllipse(pt.x() - radius, pt.y() - radius, radius * 2, radius * 2, QPen(Qt.darkGray), QBrush(Qt.green))
                     marker.setZValue(1000)
@@ -301,7 +317,7 @@ class CanvasScene(QGraphicsScene):
 
     def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent):
         from furniture import ResizeHandle
-        undo_stack = self._get_undo_stack()
+        us = self._get_undo_stack()
         if event.button() == Qt.RightButton and self._current_item is not None:
             self._exit_drawing_mode()
             return
@@ -323,21 +339,19 @@ class CanvasScene(QGraphicsScene):
                     self.removeItem(current_wall)
                 else:
                     self._items.append(current_wall)
-                    if undo_stack:
-                        cmd = AddItemCommand(current_wall, self, "Add Wall")
-                        undo_stack.push(cmd)
+                    if us:
+                        us.push(command.AddItemCommand(current_wall, self, "Add Wall"))
                 self._current_item = None
                 self.show_wall_end_markers()
+
         elif event.button() == Qt.LeftButton and mode in ("Door", "Window"):
             if self._current_item is None:
                 if mode == "Door":
                     self._current_item = self.add_door(pos, pos)
                 else:
                     self._current_item = self.add_window(pos, pos)
-                items_to_add = self._current_item if isinstance(self._current_item, tuple) else (self._current_item,)
-                for it in items_to_add:
-                    if it.scene() is not self:
-                        self.addItem(it)
+                for it in (self._current_item if isinstance(self._current_item, tuple) else (self._current_item,)):
+                    self.addItem(it)
             else:
                 items_to_finalize = self._current_item
                 main_item = items_to_finalize[0] if isinstance(items_to_finalize, tuple) else items_to_finalize
@@ -347,31 +361,29 @@ class CanvasScene(QGraphicsScene):
                     self._exit_drawing_mode()
                 else:
                     self._items.append(items_to_finalize)
-                    if undo_stack:
-                        cmd = AddItemCommand(items_to_finalize, self, f"Add {mode}")
-                        undo_stack.push(cmd)
+                    if us:
+                        us.push(command.AddItemCommand(items_to_finalize, self, f"Add {mode}"))
                     self._current_item = None
+
         elif event.button() == Qt.LeftButton and mode and mode.startswith("Furniture: "):
-            furniture_kind = mode.split(": ")[1]
+            kind = mode.split(": ")[1]
             new_item = None
-            if furniture_kind == "Bed":
+            if kind == "Bed":
                 new_item = self.add_bed(pos)
-            elif furniture_kind == "Sofa":
+            elif kind == "Sofa":
                 new_item = self.add_sofa(pos)
-            elif furniture_kind == "Table":
+            elif kind == "Table":
                 new_item = self.add_table(pos)
-            elif furniture_kind == "Wardrobe":
+            elif kind == "Wardrobe":
                 new_item = self.add_wardrobe(pos)
-            elif furniture_kind == "Chair":
+            elif kind == "Chair":
                 new_item = self.add_chair(pos)
-            elif furniture_kind == "Plant":
+            elif kind == "Plant":
                 new_item = self.add_plant(pos)
             if new_item:
-                self.addItem(new_item)
                 self._items.append(new_item)
-                if undo_stack:
-                    cmd = AddItemCommand(new_item, self, f"Add {new_item.kind}")
-                    undo_stack.push(cmd)
+                if us:
+                    us.push(command.AddItemCommand(new_item, self, f"Add {new_item.kind}"))
                 if self.parent_widget:
                     self.parent_widget.set_mode("Select")
                 return
@@ -398,7 +410,7 @@ class CanvasScene(QGraphicsScene):
                     line_item.setLine(start.x(), start.y(), end.x(), end.y())
                     dx = end.x() - start.x()
                     length = 10
-                    if abs(dx) < 1e-3:
+                    if dx == 0:
                         l1.setLine(start.x() - length / 2, start.y(), start.x() + length / 2, start.y())
                         l2.setLine(end.x() - length / 2, end.y(), end.x() + length / 2, end.y())
                     else:
@@ -415,7 +427,7 @@ class CanvasScene(QGraphicsScene):
             return
         if event.key() == Qt.Key_R:
             for item in self.selectedItems():
-                if isinstance(item, FurnitureItem):
+                if isinstance(item, FurnitureItem) and hasattr(item, "rotate_90_degrees"):
                     item.rotate_90_degrees()
             return
         super().keyPressEvent(event)
@@ -437,67 +449,56 @@ class CanvasScene(QGraphicsScene):
             x += step
         painter.restore()
 
+    def _collect_group_for_delete(self, it):
+        items = []
+        kind = it.data(0)
+        if kind == "door":
+            gid = it.data(1)
+            for obj in self.items():
+                if obj.data(0) == "door" and obj.data(1) == gid:
+                    items.append(obj)
+        elif kind == "window":
+            gid = it.data(1)
+            for obj in self.items():
+                if obj.data(1) == gid and obj.data(0) in ("window", "window_deco"):
+                    items.append(obj)
+        elif kind == "window_deco":
+            gid = it.data(1)
+            for obj in self.items():
+                if obj.data(1) == gid and obj.data(0) in ("window", "window_deco"):
+                    items.append(obj)
+        return items
+
     def delete_selected(self):
         selected = self.selectedItems()
         if not selected:
             return
-        items_to_delete: List[QtWidgets.QGraphicsItem] = []
-        processed_doors = set()
-        processed_windows = set()
+        to_delete: list[QtWidgets.QGraphicsItem] = []
         for it in selected:
-            if it in items_to_delete:
-                continue
-            kind = it.data(0)
-            if isinstance(it, FurnitureItem):
-                items_to_delete.append(it)
-                continue
             if isinstance(it, WallItem):
-                it.prepare_for_delete()
-                items_to_delete.append(it)
+                to_delete.append(it)
                 continue
-            if kind == "door":
-                door_id = it.data(1)
-                if door_id in processed_doors:
-                    continue
-                processed_doors.add(door_id)
-                pair = self._door_groups.pop(door_id, None)
-                if pair:
-                    line, arc = pair
-                    if line:
-                        items_to_delete.append(line)
-                    if arc:
-                        items_to_delete.append(arc)
+            if isinstance(it, FurnitureItem):
+                to_delete.append(it)
                 continue
-            if kind == "window" or kind == "window_deco":
-                win_id = it.data(1)
-                if win_id in processed_windows:
-                    continue
-                processed_windows.add(win_id)
-                grp = self._window_groups.pop(win_id, None)
-                if grp:
-                    line_item, l1, l2 = grp
-                    if line_item:
-                        items_to_delete.append(line_item)
-                    if l1:
-                        items_to_delete.append(l1)
-                    if l2:
-                        items_to_delete.append(l2)
-                continue
-        unique_items = []
+            group = self._collect_group_for_delete(it)
+            if group:
+                for g in group:
+                    if g not in to_delete:
+                        to_delete.append(g)
+            else:
+                to_delete.append(it)
+        unique = []
         seen = set()
-        for obj in items_to_delete:
-            if (obj not in seen) and (obj.scene() is self):
-                seen.add(obj)
-                unique_items.append(obj)
+        for it in to_delete:
+            if id(it) not in seen:
+                unique.append(it)
+                seen.add(id(it))
         self.clear_wall_end_markers()
-        undo_stack = self._get_undo_stack()
-        if undo_stack and unique_items:
-            cmd = DeleteItemsCommand(unique_items, self, "Delete Items")
-            undo_stack.push(cmd)
-        else:
-            for obj in unique_items:
-                self.removeItem(obj)
-        removed_set = set(unique_items)
+        us = self._get_undo_stack()
+        if us and unique:
+            us.push(command.DeleteItemsCommand(unique, self, "Delete Items"))
+        removed_set = set(unique)
         new_items = []
         for obj in self._items:
             if isinstance(obj, tuple):
@@ -517,8 +518,7 @@ class CanvasScene(QGraphicsScene):
             chosen = menu.exec(event.screenPos())
             if chosen == act_del:
                 if it.data(0) in ("door", "window", "window_deco"):
-                    group_id = it.data(1)
-                    group = self._door_groups.get(group_id, ()) if it.data(0) == "door" else self._window_groups.get(group_id, ())
+                    group = self._collect_group_for_delete(it)
                     for part in group:
                         part.setSelected(True)
                 else:
@@ -526,3 +526,106 @@ class CanvasScene(QGraphicsScene):
                 self.delete_selected()
         else:
             super().contextMenuEvent(event)
+
+    def to_json(self) -> dict:
+        data = {"walls": [], "doors": [], "windows": [], "furniture": []}
+
+        for it in self.items():
+            if isinstance(it, WallItem):
+                l = it.line()
+                data["walls"].append({"p1": [l.x1(), l.y1()], "p2": [l.x2(), l.y2()]})
+
+        seen_doors = set()
+        for it in self.items():
+            if isinstance(it, QGraphicsLineItem) and it.data(0) == "door":
+                gid = it.data(1)
+                if gid in seen_doors:
+                    continue
+                seen_doors.add(gid)
+                l = it.line()
+                ccw = bool(it.data(2)) if it.data(2) is not None else True
+                data["doors"].append({"p1": [l.x1(), l.y1()], "p2": [l.x2(), l.y2()], "ccw": ccw})
+
+        seen_windows = set()
+        for it in self.items():
+            if isinstance(it, QGraphicsLineItem) and it.data(0) == "window":
+                gid = it.data(1)
+                if gid in seen_windows:
+                    continue
+                seen_windows.add(gid)
+                l = it.line()
+                data["windows"].append({"p1": [l.x1(), l.y1()], "p2": [l.x2(), l.y2()]})
+
+        for it in self.items():
+            if isinstance(it, FurnitureItem):
+                r = it.rect()
+                pos = it.scenePos()
+                data["furniture"].append({
+                    "kind": it.kind,
+                    "x": pos.x(),
+                    "y": pos.y(),
+                    "w": r.width(),
+                    "h": r.height()
+                })
+
+        return data
+
+    def load_from_json(self, data: dict):
+        self.clear()
+        self._items.clear()
+        self._wall_end_markers.clear()
+        self._current_item = None
+        self._next_door_id = 1
+        self._next_window_id = 1
+
+        for w in data.get("walls", []):
+            p1 = QPointF(w["p1"][0], w["p1"][1])
+            p2 = QPointF(w["p2"][0], w["p2"][1])
+            wi = self.add_wall(p1, p2)
+            self.addItem(wi)
+            self._items.append(wi)
+
+        for d in data.get("doors", []):
+            p1 = QPointF(d["p1"][0], d["p1"][1])
+            p2 = QPointF(d["p2"][0], d["p2"][1])
+            ccw = bool(d.get("ccw", True))
+            old = self._door_ccw
+            self._door_ccw = ccw
+            line, arc = self.add_door(p1, p2)
+            self.addItem(line)
+            self.addItem(arc)
+            self._items.append((line, arc))
+            self._door_ccw = old
+
+        for w in data.get("windows", []):
+            p1 = QPointF(w["p1"][0], w["p1"][1])
+            p2 = QPointF(w["p2"][0], w["p2"][1])
+            line, l1, l2 = self.add_window(p1, p2)
+            self.addItem(line)
+            self.addItem(l1)
+            self.addItem(l2)
+            self._items.append((line, l1, l2))
+
+        for f in data.get("furniture", []):
+            kind = f["kind"]
+            center = QPointF(f["x"] + f["w"] / 2.0, f["y"] + f["h"] / 2.0)
+            item = None
+            if kind == "Bed":
+                item = self.add_bed(center)
+            elif kind == "Sofa":
+                item = self.add_sofa(center)
+            elif kind == "Table":
+                item = self.add_table(center)
+            elif kind == "Wardrobe":
+                item = self.add_wardrobe(center)
+            elif kind == "Chair":
+                item = self.add_chair(center)
+            elif kind == "Plant":
+                item = self.add_plant(center)
+            if item:
+                item.setRect(0, 0, f["w"], f["h"])
+                item.update_handles()
+                self.addItem(item)
+                self._items.append(item)
+
+        self.show_wall_end_markers()
