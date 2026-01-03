@@ -16,15 +16,33 @@ class AddItemCommand(QUndoCommand):
         for it in self.items:
             if it.scene() is not self.scene:
                 self.scene.addItem(it)
+            if it.__class__.__name__ == "WallItem":
+                if it.__class__.__name__ == "WallItem": 
+                    it.setFlag(QGraphicsItem.ItemIsSelectable, True) 
+                    it.setFlag(QGraphicsItem.ItemIsMovable, True)
+                    it._old_pos_for_undo = None
+                    it._suppress_move_command = False  
+                if hasattr(it, "_update_handles"):
+                    it._update_handles() 
+                if hasattr(it, "_update_dimension_text"): 
+                    it._update_dimension_text()       
         self.added = True
+        if hasattr(self.scene, "show_wall_end_markers"): 
+            self.scene.show_wall_end_markers() 
 
     def undo(self):
         if not self.added:
             return
+        if hasattr(self.scene, "clear_wall_end_markers"): 
+            self.scene.clear_wall_end_markers()
         for it in self.items:
             if it.scene() is self.scene:
+                if it.__class__.__name__ == "WallItem" and hasattr(it, "prepare_for_delete"): 
+                    it.prepare_for_delete()
                 self.scene.removeItem(it)
         self.added = False
+        if hasattr(self.scene, "show_wall_end_markers"): 
+            self.scene.show_wall_end_markers()
 
 
 class DeleteItemsCommand(QUndoCommand):
@@ -41,10 +59,13 @@ class DeleteItemsCommand(QUndoCommand):
             })
 
     def redo(self):
+        if hasattr(self.scene, "clear_wall_end_markers"): 
+            self.scene.clear_wall_end_markers()
         for d in self.items_data:
             it = d["item"]
-            if hasattr(it, "prepare_for_delete"):
-                it.prepare_for_delete()
+            if it.__class__.__name__ == "WallItem":
+                if hasattr(it, "prepare_for_delete"):
+                    it.prepare_for_delete()
             if it.scene() is self.scene:
                 self.scene.removeItem(it)
 
@@ -55,8 +76,17 @@ class DeleteItemsCommand(QUndoCommand):
             it.setPos(d["pos"])
             it.setZValue(d["z"])
             it.setSelected(d["selected"])
+            if it.__class__.__name__ == "WallItem":
+                it.setFlag(QGraphicsItem.ItemIsSelectable, True) 
+                it.setFlag(QGraphicsItem.ItemIsMovable, True) 
+                it._update_handles() 
+                it._update_dimension_text()
+                it._old_pos_for_undo = None 
+                it._suppress_move_command = False
             if hasattr(it, "_show_handles") and it.isSelected():
                 it._show_handles(True)
+        if hasattr(self.scene, "show_wall_end_markers"): 
+            self.scene.show_wall_end_markers()
 
 
 class ResizeItemCommand(QUndoCommand):
@@ -111,3 +141,30 @@ class WallResizeCommand(QUndoCommand):
 
     def undo(self):
         self._apply(self.old)
+
+
+class MoveItemCommand(QUndoCommand):
+    def __init__(self, item, old_pos, new_pos, description="Move Item"):
+        super().__init__(description)
+        self.item = item
+        self.old_pos = old_pos
+        self.new_pos = new_pos
+
+    def undo(self):
+        self.item._suppress_move_command = True
+        self.item.setPos(self.old_pos)
+        if hasattr(self.item, "_update_handles"):
+            self.item._update_handles()
+        if hasattr(self.item, "_update_dimension_text"):
+            self.item._update_dimension_text()
+        self.item._suppress_move_command = False
+
+    def redo(self):
+        self.item._suppress_move_command = True
+        self.item.setPos(self.new_pos)
+        if hasattr(self.item, "_update_handles"):
+            self.item._update_handles()
+        if hasattr(self.item, "_update_dimension_text"):
+            self.item._update_dimension_text()
+        self.item._suppress_move_command = False
+

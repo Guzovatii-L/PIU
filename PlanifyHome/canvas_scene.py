@@ -139,12 +139,21 @@ class WallItem(QtWidgets.QGraphicsLineItem):
         if change == QtWidgets.QGraphicsItem.ItemSelectedChange:
             self._show_handles(bool(value))
         elif change == QtWidgets.QGraphicsItem.ItemPositionChange:
+            self._old_pos_for_undo = self.pos()
             if self._resizing: 
                 return self.pos()
             sc = self.scene()
             return sc.snap_to_grid(value) if sc and hasattr(sc, 'snap_to_grid') else value
         elif change == QtWidgets.QGraphicsItem.ItemPositionHasChanged:
+            old_pos = getattr(self, "_old_pos_for_undo", None)
+            self._old_pos_for_undo = None 
+            new_pos = self.pos()
             self._update_handles()
+            sc = self.scene() 
+            if old_pos is not None and sc and hasattr(sc, "_get_undo_stack") and not getattr(self, "_suppress_move_command", False): 
+                us = sc._get_undo_stack() 
+                if us: 
+                    us.push(command.MoveItemCommand(self, old_pos, new_pos))
         return super().itemChange(change, value)
 
     def prepare_for_delete(self):
