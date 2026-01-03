@@ -14,7 +14,7 @@ class CanvasView(QGraphicsView):
         self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-        self.setDragMode(QGraphicsView.NoDrag)
+        self.setDragMode(QGraphicsView.RubberBandDrag)
         self.setMouseTracking(True)
         self.main_window = parent
         scene.parent_widget = parent
