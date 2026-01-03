@@ -27,10 +27,12 @@ class WallHandle(QtWidgets.QGraphicsEllipseItem):
         self.setZValue(100)
 
     def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent):
+        self.wall_item._resizing = True
         self._start_line = QLineF(self.wall_item.line())
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent):
+        self.wall_item._resizing = False
         if self._start_line is not None:
             end_line = QLineF(self.wall_item.line())
             if end_line.p1() != self._start_line.p1() or end_line.p2() != self._start_line.p2():
@@ -47,6 +49,8 @@ class WallHandle(QtWidgets.QGraphicsEllipseItem):
     def itemChange(self, change, value):
         if change == QtWidgets.QGraphicsItem.ItemPositionChange:
             sc = self.wall_item.scene()
+            if sc and hasattr(sc, "show_wall_end_markers"): 
+                sc.show_wall_end_markers()
             new_scene_pos = sc.snap_to_grid(value) if sc and hasattr(sc, 'snap_to_grid') else value
             local = self.wall_item.mapFromScene(new_scene_pos)
             line = self.wall_item.line()
@@ -70,6 +74,7 @@ class WallItem(QtWidgets.QGraphicsLineItem):
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsMovable, True)
         self.setFlag(QtWidgets.QGraphicsItem.ItemSendsGeometryChanges, True)
+        self._resizing = False
         self.handles = []
         self.dimension_text: QGraphicsSimpleTextItem | None = None
 
@@ -134,6 +139,8 @@ class WallItem(QtWidgets.QGraphicsLineItem):
         if change == QtWidgets.QGraphicsItem.ItemSelectedChange:
             self._show_handles(bool(value))
         elif change == QtWidgets.QGraphicsItem.ItemPositionChange:
+            if self._resizing: 
+                return self.pos()
             sc = self.scene()
             return sc.snap_to_grid(value) if sc and hasattr(sc, 'snap_to_grid') else value
         elif change == QtWidgets.QGraphicsItem.ItemPositionHasChanged:
