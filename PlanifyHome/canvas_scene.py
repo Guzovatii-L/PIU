@@ -442,18 +442,28 @@ class CanvasScene(QGraphicsScene):
         return d
 
     def load_from_json(self, d: dict):
-        self.clear(); self._items.clear(); self._wall_end_markers.clear()
+        self.clear()
+        self._items.clear() 
+        self._wall_end_markers.clear()
+
         for w in d.get("walls", []):
-            i = self.add_wall(QPointF(*w["p1"]), QPointF(*w["p2"])); self.addItem(i); self._items.append(i)
+            i = self.add_wall(QPointF(*w["p1"]), QPointF(*w["p2"])); 
+            self.addItem(i)
+            self._items.append(i)
         for dr in d.get("doors", []):
-            self._door_ccw = dr.get("ccw", True); line, arc = self.add_door(QPointF(*dr["p1"]), QPointF(*dr["p2"]))
+            self._door_ccw = dr.get("ccw", True)
+            line, arc = self.add_door(QPointF(*dr["p1"]), QPointF(*dr["p2"]))
             self.addItem(line); self.addItem(arc); self._items.append((line, arc))
         for w in d.get("windows", []):
             line, l1, l2 = self.add_window(QPointF(*w["p1"]), QPointF(*w["p2"]))
-            self.addItem(line); self.addItem(l1); self.addItem(l2); self._items.append((line, l1, l2))
+            self.addItem(line)
+            self.addItem(l1)
+            self.addItem(l2)
+            self._items.append((line, l1, l2))
         for f in d.get("furniture", []):
-            item = getattr(self, f"add_{f['kind'].lower()}")(QPointF(f["x"]+f["w"]/2, f["y"]+f["h"]/2))
-            if item:
-                item.setRect(0, 0, f["w"], f["h"]); item.setRotation(f.get("rotation", 0))
-                item.update_handles(); self.addItem(item); self._items.append(item)
+            item = FurnitureItem(f["kind"], f["x"], f["y"], f["w"], f["h"])
+            item.setRotation(f.get("rotation", 0))
+            item.update_handles()
+            self.addItem(item)
+            self._items.append(item)
         self.show_wall_end_markers()
