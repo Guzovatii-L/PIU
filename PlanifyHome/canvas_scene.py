@@ -445,7 +445,11 @@ class CanvasScene(QGraphicsScene):
     def to_json(self) -> dict:
         d = {"walls": [], "doors": [], "windows": [], "furniture": []}
         for it in self.items():
-            if isinstance(it, WallItem): l = it.line(); d["walls"].append({"p1": [l.x1(), l.y1()], "p2": [l.x2(), l.y2()]})
+            if isinstance(it, WallItem):
+                l = it.line() 
+                p1 = it.mapToScene(l.p1()) 
+                p2 = it.mapToScene(l.p2()) 
+                d["walls"].append({"p1": [p1.x(), p1.y()], "p2": [p2.x(), p2.y()]})       
         seen_d, seen_w = set(), set()
         for it in self.items():
             if isinstance(it, QGraphicsLineItem):
