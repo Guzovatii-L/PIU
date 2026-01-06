@@ -44,9 +44,12 @@ class ResizeHandle(QtWidgets.QGraphicsRectItem):
 class FurnitureItem(QtWidgets.QGraphicsRectItem):
     def __init__(self, kind, x, y, w, h):
         super().__init__(0, 0, w, h)
+        self.setTransformOriginPoint(w / 2, h / 2)
         self.kind = kind; self.setPos(x, y); self._min_w, self._min_h = 30.0, 30.0
         self.setFlags(QtWidgets.QGraphicsItem.ItemIsMovable | QtWidgets.QGraphicsItem.ItemIsSelectable | QtWidgets.QGraphicsItem.ItemSendsGeometryChanges | QtWidgets.QGraphicsItem.ItemIsFocusable)
         self.handle = ResizeHandle(self); self.handle.hide(); self.update_handles()
+        self.setAcceptHoverEvents(True)
+        self.setAcceptedMouseButtons(Qt.AllButtons)
 
     def resize_to(self, nw, nh):
         self.prepareGeometryChange(); self.setRect(0, 0, nw, nh); self.update_handles(); self.update()
@@ -56,12 +59,20 @@ class FurnitureItem(QtWidgets.QGraphicsRectItem):
     def itemChange(self, change, value):
         if change == QtWidgets.QGraphicsItem.ItemSelectedHasChanged: self.handle.setVisible(bool(value))
         elif change == QtWidgets.QGraphicsItem.ItemPositionChange:
+            self._old_pos_for_undo = self.pos()
+            return value
+        elif change == QtWidgets.QGraphicsItem.ItemPositionHasChanged:
             sc = self.scene()
-            if sc and hasattr(sc, "is_item_inside_room"):
-                new_rect = QtCore.QRectF(value.x(), value.y(), self.rect().width(), self.rect().height())
-                collides = sc.is_colliding_with_furniture(new_rect, exclude_item=self) if hasattr(sc, "is_colliding_with_furniture") else False
-                if not sc.is_item_inside_room(new_rect) or collides:
-                    return self.pos()
+            if sc:
+                new_rect = self.sceneBoundingRect()
+                if len(sc.selectedItems()) == 1:
+                    inside = sc.is_item_inside_room(new_rect)
+                    collides = sc.is_colliding_with_furniture(new_rect, exclude_item=self)
+                    if not inside or collides:
+                        self.setPos(self._old_pos_for_undo)
+                        self._old_pos_for_undo = None
+                        return super().itemChange(change, value)
+            self._old_pos_for_undo = None
         return super().itemChange(change, value)
 
     def paint(self, painter, option, widget=None):
@@ -105,3 +116,38 @@ class FurnitureItem(QtWidgets.QGraphicsRectItem):
             dot = r2 * 0.12
             painter.drawEllipse(QtCore.QPointF(cx, center_up), dot, dot)
         else: painter.drawRect(r)
+    
+    def wheelEvent(self, event):
+        step = 10
+        old_rot = self.rotation()
+        new_rot = old_rot + (step if event.delta() > 0 else -step)
+        self.setRotation(new_rot)
+        sc = self.scene()
+        if sc:
+            rect = self.sceneBoundingRect()
+            inside = sc.is_item_inside_room(rect)
+            collides = sc.is_colliding_with_furniture(rect, exclude_item=self)
+            if not inside or collides:
+                self.setRotation(old_rot)
+                return
+            us = sc._get_undo_stack()
+            if us:
+                import command
+                us.push(command.RotateItemCommand(self, old_rot, new_rot))
+        event.accept()
+
+    def mousePressEvent(self, event):
+        self._undo_start_pos = self.pos()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        old = getattr(self, "_undo_start_pos", None)
+        new = self.pos()
+        if old is not None and old != new:
+            sc = self.scene()
+            if sc:
+                us = sc._get_undo_stack()
+                if us:
+                    import command
+                    us.push(command.MoveItemCommand(self, old, new))
+        super().mouseReleaseEvent(event)

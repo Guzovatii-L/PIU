@@ -168,3 +168,17 @@ class MoveItemCommand(QUndoCommand):
             self.item._update_dimension_text()
         self.item._suppress_move_command = False
 
+
+class RotateItemCommand(QUndoCommand):
+    def __init__(self, item, old_rot, new_rot, text="Rotate Item"):
+        super().__init__(text)
+        self.item = item
+        self.old_rot = old_rot
+        self.new_rot = new_rot
+
+    def undo(self):
+        self.item.setRotation(self.old_rot)
+
+    def redo(self):
+        self.item.setRotation(self.new_rot)
+

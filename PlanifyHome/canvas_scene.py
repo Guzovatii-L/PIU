@@ -145,15 +145,7 @@ class WallItem(QtWidgets.QGraphicsLineItem):
             sc = self.scene()
             return sc.snap_to_grid(value) if sc and hasattr(sc, 'snap_to_grid') else value
         elif change == QtWidgets.QGraphicsItem.ItemPositionHasChanged:
-            old_pos = getattr(self, "_old_pos_for_undo", None)
-            self._old_pos_for_undo = None 
-            new_pos = self.pos()
             self._update_handles()
-            sc = self.scene() 
-            if old_pos is not None and sc and hasattr(sc, "_get_undo_stack") and not getattr(self, "_suppress_move_command", False): 
-                us = sc._get_undo_stack() 
-                if us: 
-                    us.push(command.MoveItemCommand(self, old_pos, new_pos))
         return super().itemChange(change, value)
 
     def prepare_for_delete(self):
@@ -167,6 +159,23 @@ class WallItem(QtWidgets.QGraphicsLineItem):
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, False)
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsMovable, False)
         self.setSelected(False)
+    
+    def mousePressEvent(self, event):
+        self._undo_start_pos = self.pos()
+        super().mousePressEvent(event)
+    
+    def mouseReleaseEvent(self, event):
+        old = getattr(self, "_undo_start_pos", None)
+        new = self.pos()
+        if old is not None and old != new:
+            sc = self.scene()
+            if sc:
+                us = sc._get_undo_stack()
+                if us:
+                    import command
+                    us.push(command.MoveItemCommand(self, old, new))
+        super().mouseReleaseEvent(event)
+
 
 class CanvasScene(QGraphicsScene):
     def __init__(self, parent=None):
@@ -385,12 +394,21 @@ class CanvasScene(QGraphicsScene):
     def keyPressEvent(self, event: QtGui.QKeyEvent):
         if event.key() == Qt.Key_Escape: self._exit_drawing_mode(); return
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace): self.delete_selected(); return
-        if event.key() == Qt.Key_R:
+        if event.key() in (Qt.Key_R, Qt.Key_L):
+            step = 90 if event.key() == Qt.Key_R else -90
             for it in self.selectedItems():
                 if isinstance(it, FurnitureItem):
-                    old_rot = it.rotation(); it.setRotation(old_rot + 90)
-                    if not self.is_item_inside_room(it.sceneBoundingRect()) or self.is_colliding_with_furniture(it.sceneBoundingRect(), exclude_item=it):
-                        it.setRotation(old_rot)
+                    old_rot = it.rotation(); it.setRotation(old_rot + step)
+                    rect = it.sceneBoundingRect() 
+                    inside = self.is_item_inside_room(rect) 
+                    collides = self.is_colliding_with_furniture(rect, exclude_item=it)
+                    if not inside or collides: 
+                        it.setRotation(old_rot) 
+                        continue
+                    us = self._get_undo_stack() 
+                    if us: 
+                        import command 
+                        us.push(command.RotateItemCommand(it, old_rot, it.rotation()))
             return
         super().keyPressEvent(event)
 
