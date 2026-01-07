@@ -319,6 +319,21 @@ class CanvasScene(QGraphicsScene):
         self._current_item = None; self.show_wall_end_markers()
         if self.parent_widget: self.parent_widget.set_mode("Select")
 
+
+    def check_overlap(self, new_item_main_line):
+        rect1= new_item_main_line.sceneBoundingRect().marginsAdded(QMarginsF(-1, -1, -1, -1))
+
+        for item in self.items():
+            if item is new_item_main_line:
+                continue
+
+            if isinstance(item, QGraphicsLineItem) and item.data(0) in ("door", "window"):
+                rect2 = item.sceneBoundingRect()
+                if rect1.intersects(rect2):
+                    return True # se suprapune 
+        return False
+    
+
     def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent):
         from furniture import ResizeHandle
         us = self._get_undo_stack()
@@ -346,12 +361,17 @@ class CanvasScene(QGraphicsScene):
             else:
                 main = self._current_item[0] if isinstance(self._current_item, tuple) else self._current_item
                 end_p = main.mapToScene(main.line().p2())
-                if self.is_point_on_wall(end_p) and main.line().length() >= GRID_SIZE/2:
+                is_overlapping = self.check_overlap(main)
+
+                if self.is_point_on_wall(end_p) and main.line().length() >= GRID_SIZE/2 and not is_overlapping:
                     self._items.append(self._current_item)
                     if us: us.push(command.AddItemCommand(self._current_item, self, f"Add {mode}"))
                     self._current_item = None
                 else:
-                    QMessageBox.warning(None, "Atentie", "Ambele capete trebuie sa fie pe perete.")
+                    if is_overlapping:
+                        QMessageBox.warning(None, "Eroare", "Nu poti suprapune usile/ferestrele! Spatiul este ocupat.")
+                    elif not self.is_point_on_wall(end_p):
+                        QMessageBox.warning(None, "Atentie", "Ambele capete trebuie sa fie pe perete.")
                     self._exit_drawing_mode()
         elif mode.startswith("Furniture: "):
             if not self.is_point_inside_room(pos):
@@ -432,16 +452,53 @@ class CanvasScene(QGraphicsScene):
     def delete_selected(self):
         selected = self.selectedItems()
         if not selected: return
-        to_del = []
-        for it in selected:
-            if isinstance(it, (WallItem, FurnitureItem)): to_del.append(it)
-            elif it.data(0) in ("door", "window", "window_deco"):
-                gid = it.data(1); to_del.extend([o for o in self.items() if o.data(1) == gid])
-        unique = list(set(to_del)); self.clear_wall_end_markers()
+        to_del = set()
+
+        selected_walls=[]
+        for item in selected:
+            if isinstance(item, WallItem):
+                selected_walls.append(item)
+
+        to_del.update(selected)
+        if selected_walls:
+            for it in self.items():
+                if isinstance(it, QGraphicsLineItem) and it.data(0) in ("door", "window") and it not in to_del:
+                    l_door = it.line()
+                    p1_scene = it.mapToScene(l_door.p1())
+                    p2_scene = it.mapToScene(l_door.p2())
+                    center = (p1_scene + p2_scene) / 2
+
+                    for wall in selected_walls:
+                        wl = wall.line()
+                        p1 = wall.mapToScene(wl.p1())
+                        p2 = wall.mapToScene(wl.p2())
+                        wall_line = QLineF(p1, p2)
+
+                        if wall_line.length() == 0: continue
+
+                        dist=abs((p2.y()-p1.y())*center.x() - (p2.x() - p1.x()) * center.y() + p2.x() * p1.y() - p2.y()*p1.x()) / wall_line.length()
+
+                        if dist < 2.0:
+                            to_del.add(it)
+                            break
+
+        final_list = list(to_del)
+        for it in final_list:
+            if isinstance(it, QGraphicsLineItem) and it.data(0) in ("door", "window"):
+                gid = it.data(1)
+                extras = [o for o in self.items() if o.data(1) == gid]
+                to_del.update(extras)
+
+        unique = list(to_del)
+        self.clear_wall_end_markers()
+        
         us = self._get_undo_stack()
-        if us and unique: us.push(command.DeleteItemsCommand(unique, self, "Delete Items"))
+        if us and unique:
+            us.push(command.DeleteItemsCommand(unique, self, "Delete Items"))
+            
         self.show_wall_end_markers()
 
+        
     def to_json(self) -> dict:
         d = {"walls": [], "doors": [], "windows": [], "furniture": []}
         for it in self.items():
